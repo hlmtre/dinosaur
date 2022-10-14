@@ -1,15 +1,22 @@
 use crate::config::Config;
 use socket2::{Domain, Protocol, Socket, Type};
-pub(crate) fn service_loop(s: Socket, c: Config) {
+pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
+  eprintln!("listening for dns requests...");
   eprintln!("{:?}", s);
   eprintln!("{:?}", c);
-  let mut counter: usize = 0;
+  let mut buf = [0_u8; 576];
+  #[allow(unreachable_code)]
   loop {
-    if counter > 100 {
-      break;
-    }
-    std::thread::sleep(std::time::Duration::from_millis(10));
-    counter += 1;
+    let a = match s.recv_from(&mut buf) {
+      Ok(b) => b,
+      Err(_) => todo!(),
+    };
+    eprintln!(
+      "received {:#?} bytes from socket from client {:#?}",
+      a.0, a.1
+    );
+    eprintln!("bytes: {:#?}", &buf);
   }
-  return;
+  #[allow(unreachable_code)]
+  Ok(())
 }

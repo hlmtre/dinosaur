@@ -13,13 +13,13 @@ fn main() {
     Ok(a) => a,
     _ => panic!("couldn't create socket :("),
   };
-  if c.interface.clone().len() > 0 {
+  if !c.interface.is_empty() {
     socket
       .bind_device(Some(&CString::new(c.interface.clone()).unwrap()))
-      .expect(format!("couldn't bind to {}", c.interface).as_str());
+      .unwrap_or_else(|_| panic!("couldn't bind to {}", c.interface));
   }
   socket
     .bind(&c.ip_address.into())
-    .expect(format!("couldn't bind to {}", c.ip_address).as_str());
+    .unwrap_or_else(|_| panic!("couldn't bind to {}", c.ip_address));
   server::service_loop(socket, c);
 }
