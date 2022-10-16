@@ -1,3 +1,4 @@
+use crate::dnserror::DnsError;
 use std::{net::SocketAddr, path::Path, path::PathBuf};
 
 #[derive(Debug)]
@@ -8,14 +9,14 @@ pub(crate) struct Config {
 }
 
 impl Config {
-  pub(crate) fn default() -> Config {
-    Config {
+  pub(crate) fn default() -> Result<Config, DnsError> {
+    Ok(Config {
       interface: "lo".to_string(),
       ip_address: "0.0.0.0:5354"
         .parse::<std::net::SocketAddrV4>()
         .unwrap()
         .into(),
       config_location: Path::new(".").to_owned(),
-    }
+    })
   }
 }
