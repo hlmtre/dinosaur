@@ -13,7 +13,7 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
       Err(_) => todo!(),
     };
     let mut message: DnsMessage = DnsMessage::default();
-    match message.parse(&buf) {
+    match message.parse(&buf, a.0) {
       Ok(_m) => {
         eprintln!(
           "received {:#?} bytes from socket from client {:#?}",

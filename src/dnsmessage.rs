@@ -1,4 +1,7 @@
 use crate::dnserror::DnsError;
+
+use bitlab::*;
+use std::convert::TryInto;
 use std::fmt;
 
 /*
@@ -42,13 +45,13 @@ use std::fmt;
 #[derive(Debug, Default)]
 pub(crate) struct DnsMessage {
   pub(crate) tx_id: u16,
-  pub(crate) flags: u16,
+  pub(crate) raw_flags: u16,
   pub(crate) questions: u16,
   pub(crate) answer_rrs: u16,
   pub(crate) authority_rrs: u16,
   pub(crate) additional_rrs: u16,
-  pub(crate) queries: Vec<u8>,
-  Flags: Flags,
+  pub(crate) host: String,
+  flags: Flags,
 }
 /*
     Flags: 0x0120 Standard query
@@ -86,6 +89,20 @@ impl fmt::Display for DnsMessageType {
     write!(f, "DnsMessageType: {:?}", self)
   }
 }
+
+/*
+impl TryFrom<u16> for DnsMessageType {
+  type Error = ();
+
+  fn try_from(v: u16) -> Result<Self, Self::Error> {
+    match v {
+      x if x == DnsMessageType::Query as u16 => Ok(DnsMessageType::Query),
+      x if x == DnsMessageType::Response as u16 => Ok(DnsMessageType::Response),
+      _ => Err(()),
+    }
+  }
+}
+*/
 
 #[derive(Debug)]
 pub(crate) enum QueryType {
@@ -126,34 +143,95 @@ impl Default for Flags {
   }
 }
 
-impl fmt::Display for Flags {
-  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-    write!(f, "Flags: {}, query_type: {}, authoritative {}, truncated: {}, recursive: {}, recursion_available: {}, authenticated: {}, error: {}", self.rq, self.query_type, self.authoritative, self.truncated, self.recursive, self.recursion_available, self.authenticated, self.error)
+/*
+    0... .... .... .... = Response: Message is a query
+    .000 0... .... .... = Opcode: Standard query (0)
+    .... ..0. .... .... = Truncated: Message is not truncated
+    .... ...1 .... .... = Recursion desired: Do query recursively
+    .... .... .0.. .... = Z: reserved (0)
+    .... .... ..1. .... = AD bit: Set
+    .... .... ...0 .... = Non-authenticated data: Unacceptable
+
+    0000 0001 0010 0000 = 0x0120
+    .000 0... .... .... = Opcode: Standard query (0)
+    .010 0 would be dec 4, and would be an inverse request
+*/
+impl Flags {
+  fn new(raw_flags: u16) -> Self {
+    Flags {
+      rq: if !raw_flags.get_bit(0).unwrap() {
+        DnsMessageType::Query
+      } else {
+        DnsMessageType::Response
+      },
+      query_type: if raw_flags.get_bit(2).unwrap() {
+        QueryType::Inverse
+      } else {
+        QueryType::Standard
+      },
+      authoritative: true,
+      truncated: false,
+      recursive: true,
+      recursion_available: true,
+      authenticated: false,
+      error: DnsResponseErrorType::NoError,
+    }
   }
 }
 
-//pub(crate) fn parse(&mut self, buf: &[u8]) {
-//self.secs = u16::from_be_bytes(buf[8..10].try_into().unwrap());
-//
+impl fmt::Display for Flags {
+  fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(
+      f,
+      r#"Flags: 
+            {}, 
+            {} 
+            authoritative: {} 
+            truncated: {} 
+            recursive: {} 
+            recursion_available: {} 
+            authenticated: {} 
+            {}"#,
+      self.rq,
+      self.query_type,
+      self.authoritative,
+      self.truncated,
+      self.recursive,
+      self.recursion_available,
+      self.authenticated,
+      self.error
+    )
+  }
+}
+
 impl fmt::Display for DnsMessage {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(
       f,
-      "DnsMessage tx_id: {:02x}, flags: {:02x}, questions: {:02x}, answer_rrs: {:02x}",
-      self.tx_id, self.flags, self.questions, self.answer_rrs
-    );
-    write!(f, "flaggy: {}", self.flags << 1)
+      r#"DnsMessage tx_id: == {:02x} ==
+      flags: {} 
+      questions: {:02x}, answer_rrs: {:02x}
+      host: {:?}
+      "#,
+      self.tx_id, self.flags, self.questions, self.answer_rrs, self.host
+    )
   }
 }
 
 impl DnsMessage {
-  pub(crate) fn parse(&mut self, buf: &[u8]) -> Result<(), DnsError> {
+  pub(crate) fn parse(&mut self, buf: &[u8], len: usize) -> Result<(), DnsError> {
     self.tx_id = u16::from_be_bytes(buf[0..2].try_into()?);
-    self.flags = u16::from_be_bytes(buf[3..5].try_into()?);
-    self.questions = u16::from_be_bytes(buf[6..8].try_into()?);
-    self.answer_rrs = u16::from_be_bytes(buf[9..11].try_into()?);
-    self.authority_rrs = u16::from_be_bytes(buf[12..14].try_into()?);
-    self.additional_rrs = u16::from_be_bytes(buf[15..17].try_into()?);
+    self.raw_flags = u16::from_be_bytes(buf[2..4].try_into()?);
+    self.questions = u16::from_be_bytes(buf[4..6].try_into()?);
+    // multiple questions basically not supported by any dns server
+    // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
+    // self.questions = 1;
+    self.answer_rrs = u16::from_be_bytes(buf[6..8].try_into()?);
+    self.authority_rrs = u16::from_be_bytes(buf[8..10].try_into()?);
+    self.additional_rrs = u16::from_be_bytes(buf[10..12].try_into()?);
+    println!("{}", len);
+    self.host = String::from_utf8(self.take_next(buf, &mut 13, len - 41).unwrap()).unwrap();
+    self.flags = Flags::new(self.raw_flags);
     Ok(())
   }
 
@@ -164,7 +242,7 @@ impl DnsMessage {
     jump: usize,
   ) -> Result<Vec<u8>, DnsError> {
     let ret = buf[*current_index..*current_index + jump].to_vec();
-    *current_index += jump;
+    eprintln!("len: {}", jump);
     Ok(ret)
   }
 }
