@@ -1,5 +1,4 @@
 use crate::dnserror::DnsError;
-use bitflags::bitflags;
 use std::fmt;
 
 /*

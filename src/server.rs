@@ -20,9 +20,9 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
           a.0, a.1
         );
         println!("{}", message);
-        eprintln!("bytes: {:x?}", &buf);
+        eprintln!("bytes: {:02x?}", &buf);
       }
-      Err(e) => eprintln!("{:x?}", e),
+      Err(e) => eprintln!("{:02x?}", e),
     };
   }
   #[allow(unreachable_code)]
