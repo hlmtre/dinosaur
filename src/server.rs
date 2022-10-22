@@ -1,6 +1,6 @@
-use crate::config::Config;
-use crate::dnsmessage;
+use crate::{config::Config, dnsmessage::DnsMessage};
 use socket2::{Domain, Protocol, Socket, Type};
+
 pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
   eprintln!("listening for dns requests...");
   eprintln!("{:?}", s);
@@ -12,10 +12,9 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
       Ok(b) => b,
       Err(_) => todo!(),
     };
-    let mut message = dnsmessage::DnsMessage::default();
-    eprintln!("{:#?}", message);
+    let mut message: DnsMessage = DnsMessage::default();
     match message.parse(&buf) {
-      Ok(m) => {
+      Ok(_m) => {
         eprintln!(
           "received {:#?} bytes from socket from client {:#?}",
           a.0, a.1
