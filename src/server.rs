@@ -5,7 +5,7 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
   eprintln!("listening for dns requests...");
   eprintln!("{:?}", s);
   eprintln!("{:?}", c);
-  let mut buf = [0_u8; 576];
+  let mut buf = [0_u8; 512]; // maximum non-eDNS len
   #[allow(unreachable_code)]
   loop {
     let a = match s.recv_from(&mut buf) {
@@ -13,7 +13,7 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
       Err(_) => todo!(),
     };
     let mut message: DnsMessage = DnsMessage::default();
-    match message.parse(&buf, a.0) {
+    match message.parse(&buf) {
       Ok(_m) => {
         eprintln!(
           "received {:#?} bytes from socket from client {:#?}",

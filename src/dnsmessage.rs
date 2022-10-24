@@ -4,6 +4,8 @@ use bitlab::*;
 use std::convert::TryInto;
 use std::fmt;
 
+const HEADER_LEN: u8 = 12;
+
 /*
 *
    Domain Name System (query)
@@ -159,7 +161,7 @@ impl Default for Flags {
 impl Flags {
   fn new(raw_flags: u16) -> Self {
     Flags {
-      rq: if !raw_flags.get_bit(0).unwrap() {
+      rq: if !raw_flags.get_bit(1).unwrap() {
         DnsMessageType::Query
       } else {
         DnsMessageType::Response
@@ -219,30 +221,74 @@ impl fmt::Display for DnsMessage {
 }
 
 impl DnsMessage {
-  pub(crate) fn parse(&mut self, buf: &[u8], len: usize) -> Result<(), DnsError> {
+  pub(crate) fn parse(&mut self, buf: &[u8]) -> Result<(), DnsError> {
     self.tx_id = u16::from_be_bytes(buf[0..2].try_into()?);
     self.raw_flags = u16::from_be_bytes(buf[2..4].try_into()?);
-    self.questions = u16::from_be_bytes(buf[4..6].try_into()?);
     // multiple questions basically not supported by any dns server
     // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
     // self.questions = 1;
+    self.questions = u16::from_be_bytes(buf[4..6].try_into()?);
     self.answer_rrs = u16::from_be_bytes(buf[6..8].try_into()?);
     self.authority_rrs = u16::from_be_bytes(buf[8..10].try_into()?);
     self.additional_rrs = u16::from_be_bytes(buf[10..12].try_into()?);
-    println!("{}", len);
-    self.host = String::from_utf8(self.take_next(buf, &mut 13, len - 41).unwrap()).unwrap();
+    // the header's 12 bytes long
+    // now we're at query
+    // first we're going to be told how long the first unicode string is,
+    // then the first part of the host name,
+    // then the length of the next chunk, then the next part of the host name..
+    // ad infinitum, not quite
+    /*
+            *                     query name              type   class
+              -----------------------------------  -----  -----
+       HEX    06 67 6f 6f 67 6c 65 03 63 6f 6d 00  00 01  00 01
+       ASCII     g  o  o  g  l  e     c  o  m
+       DEC    6                    3           0       1      1
+       thanks https://github.com/EmilHernvall/dnsguide/blob/master/chapter1.md for the chart
+    */
+    let mut index = usize::from(HEADER_LEN);
+    let mut host_chunk_len = buf[index];
+    // we have to step through one name chunk at a time
+    //   g o o g l e   c o m
+    // 6             3       0
+    // ^ here
+    //               ^ then here
+    //                       ^ then here, and discover we're done
+    let mut temp_host = String::new();
+    while host_chunk_len != 0 {
+      temp_host.push_str(
+        String::from_utf8(self.take_next(buf, &mut index, host_chunk_len.into())?)
+          .unwrap()
+          .as_str(),
+      );
+      host_chunk_len = buf[index];
+      temp_host.push('.');
+    }
     self.flags = Flags::new(self.raw_flags);
+    self.host = self.remove_dot(temp_host);
     Ok(())
   }
 
+  fn remove_dot(&self, value: String) -> String {
+    let mut chars = value.chars();
+    chars.next_back();
+    chars.as_str().to_string()
+  }
+
+  /*
+    hop along the byte array, grabbing chunks, and then incrementing our index, so the next call grabs the next specified length
+    and can increment the index to the start of the following one
+  */
   fn take_next(
     &self,
     buf: &[u8],
     current_index: &mut usize,
     jump: usize,
   ) -> Result<Vec<u8>, DnsError> {
+    // here we do have to get the NEXT one,
+    // because the current_index is just the position of the length of characters to read
+    *current_index += 1;
     let ret = buf[*current_index..*current_index + jump].to_vec();
-    eprintln!("len: {}", jump);
+    *current_index += jump;
     Ok(ret)
   }
 }
