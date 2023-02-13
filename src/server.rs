@@ -20,6 +20,8 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
           a.0, a.1
         );
         println!("{}", message);
+        // TODO
+        // respond to the message here
         eprintln!("bytes: {:02x?}", &buf);
       }
       Err(e) => eprintln!("{:02x?}", e),

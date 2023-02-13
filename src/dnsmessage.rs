@@ -286,12 +286,6 @@ impl DnsMessage {
   ) -> Result<Vec<u8>, DnsError> {
     // here we do have to get the NEXT one,
     // because the current_index is just the position of the length of characters to read
-    /*
-        ... 0 1 2 3 4 5 6 7 8 9 a
-        ... 6[g o o g l e]3 c o m
-                          ^
-      update current index to len of next chunk
-    */
     *current_index += 1;
     let ret = buf[*current_index..*current_index + jump].to_vec();
     *current_index += jump;
