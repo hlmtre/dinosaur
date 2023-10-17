@@ -221,7 +221,7 @@ impl fmt::Display for DnsMessage {
 }
 
 impl DnsMessage {
-  pub(crate) fn parse(&mut self, buf: &[u8]) -> Result<(), DnsError> {
+  pub(crate) fn parse(&mut self, buf: &[u8]) -> Result<&mut DnsMessage, DnsError> {
     self.tx_id = u16::from_be_bytes(buf[0..2].try_into()?);
     self.raw_flags = u16::from_be_bytes(buf[2..4].try_into()?);
     // multiple questions basically not supported by any dns server
@@ -265,7 +265,36 @@ impl DnsMessage {
     }
     self.flags = Flags::new(self.raw_flags);
     self.host = self.remove_dot(temp_host);
-    Ok(())
+    Ok(self)
+  }
+
+  pub(crate) fn dns_message_as_byte_vec(&self) -> Result<Vec<u16>, DnsError> {
+    let mut r = Vec::new();
+    r.push(self.tx_id);
+    r.push(self.raw_flags);
+    r.push(self.questions);
+    r.push(self.answer_rrs);
+    r.push(self.authority_rrs);
+    r.push(self.additional_rrs);
+    for c in self.host.chars() {
+      let mut _b = [0; 1];
+      c.encode_utf16(&mut _b);
+      r.push(_b[0]);
+    }
+    return Ok(r);
+  }
+
+  pub(crate) fn generate_response(&mut self) -> Result<&DnsMessage, DnsError> {
+    // should be, all we have to do is set the flag as a response instead of request
+    // then give back our object to be serialized and sent over the network back to client
+    self.set_rq_type(DnsMessageType::Response);
+    eprintln!("{:?}", self);
+    Ok(self)
+  }
+
+  fn set_rq_type(&mut self, t: DnsMessageType) -> &DnsMessage {
+    self.flags.rq = t;
+    self
   }
 
   fn remove_dot(&self, value: String) -> String {

@@ -14,15 +14,18 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
     };
     let mut message: DnsMessage = DnsMessage::default();
     match message.parse(&buf) {
-      Ok(_m) => {
+      Ok(mut _m) => {
         eprintln!(
           "received {:#?} bytes from socket from client {:#?}",
           a.0, a.1
         );
-        println!("{}", message);
+        //println!("{:?}", _m);
         // TODO
         // respond to the message here
-        eprintln!("bytes: {:02x?}", &buf);
+        eprintln!("query: {:02x?}", &buf);
+        let r = _m.generate_response();
+        let _x = r.unwrap().to_owned();
+        eprintln!("response: {:02x?}", _x.dns_message_as_byte_vec());
       }
       Err(e) => eprintln!("{:02x?}", e),
     };

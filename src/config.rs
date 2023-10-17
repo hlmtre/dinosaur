@@ -11,7 +11,7 @@ pub(crate) struct Config {
 impl Config {
   pub(crate) fn default() -> Result<Config, DnsError> {
     Ok(Config {
-      interface: "lo".to_string(),
+      interface: "du0".to_string(),
       ip_address: "0.0.0.0:5354"
         .parse::<std::net::SocketAddrV4>()
         .unwrap()
