@@ -161,15 +161,15 @@ impl Default for Flags {
 impl Flags {
   fn new(raw_flags: u16) -> Self {
     Flags {
-      rq: if !raw_flags.get_bit(1).unwrap() {
+      rq: if (raw_flags & 0b1000_0000_0000_0000) == 0 {
         DnsMessageType::Query
       } else {
         DnsMessageType::Response
       },
-      query_type: if raw_flags.get_bit(2).unwrap() {
-        QueryType::Inverse
-      } else {
+      query_type: if (raw_flags & 0b0100_0000_0000_0000) == 0 {
         QueryType::Standard
+      } else {
+        QueryType::Inverse
       },
       authoritative: true,
       truncated: false,
@@ -270,8 +270,14 @@ impl DnsMessage {
 
   pub(crate) fn dns_message_as_byte_vec(&self) -> Result<Vec<u16>, DnsError> {
     let mut r = Vec::new();
+    // keep the tx_id so we're part of the same dns 'conversation'
     r.push(self.tx_id);
-    r.push(self.raw_flags);
+    // then set our qr field to 1 (reply; 0 is query)
+    let mut our_bits = self.raw_flags;
+    our_bits |= 0b1000_0000_0000_0000;
+    eprintln!("original bits: {:016b}", self.raw_flags);
+    eprintln!("our bits:      {:016b}", our_bits);
+    r.push(our_bits);
     r.push(self.questions);
     r.push(self.answer_rrs);
     r.push(self.authority_rrs);

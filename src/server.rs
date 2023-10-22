@@ -13,6 +13,10 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
       Err(_) => todo!(),
     };
     let mut message: DnsMessage = DnsMessage::default();
+    for b in buf {
+      print!("{:016b} ", b);
+    }
+    println!();
     match message.parse(&buf) {
       Ok(mut _m) => {
         eprintln!(
@@ -22,10 +26,10 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
         //println!("{:?}", _m);
         // TODO
         // respond to the message here
-        eprintln!("query: {:02x?}", &buf);
+        println!("query: {:02x?}", &_m);
         let r = _m.generate_response();
         let _x = r.unwrap().to_owned();
-        eprintln!("response: {:02x?}", _x.dns_message_as_byte_vec());
+        println!("response: {:02x?}", _x);
       }
       Err(e) => eprintln!("{:02x?}", e),
     };
