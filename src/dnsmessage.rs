@@ -1,6 +1,7 @@
 use crate::dnserror::DnsError;
+use std::net::Ipv4Addr;
 
-use bitlab::*;
+//use bitlab::*;
 use std::convert::TryInto;
 use std::fmt;
 
@@ -42,13 +43,75 @@ const HEADER_LEN: u8 = 12;
                Data length: 12
                Option: COOKIE
 
+
+Domain Name System (response)
+    Transaction ID: 0x20f8
+    Flags: 0x8180 Standard query response, No error
+        1... .... .... .... = Response: Message is a response
+        .000 0... .... .... = Opcode: Standard query (0)
+        .... .0.. .... .... = Authoritative: Server is not an authority for domain
+        .... ..0. .... .... = Truncated: Message is not truncated
+        .... ...1 .... .... = Recursion desired: Do query recursively
+        .... .... 1... .... = Recursion available: Server can do recursive queries
+        .... .... .0.. .... = Z: reserved (0)
+        .... .... ..0. .... = Answer authenticated: Answer/authority portion was not authenticated by the server
+        .... .... ...0 .... = Non-authenticated data: Unacceptable
+        .... .... .... 0000 = Reply code: No error (0)
+    Questions: 1
+    Answer RRs: 1
+    Authority RRs: 0
+    Additional RRs: 1
+    Queries
+        chea-dfs.ad.nvih.org: type A, class IN
+            Name: chea-dfs.ad.nvih.org
+            [Name Length: 20]
+            [Label Count: 4]
+            Type: A (Host Address) (1)
+            Class: IN (0x0001)
+    Answers
+        chea-dfs.ad.nvih.org: type A, class IN, addr 10.148.76.5
+            Name: chea-dfs.ad.nvih.org
+            Type: A (Host Address) (1)
+            Class: IN (0x0001)
+            Time to live: 1200 (20 minutes)
+            Data length: 4
+            Address: 10.148.76.5
+    Additional records
+        <Root>: type OPT
+            Name: <Root>
+            Type: OPT (41)
+            UDP payload size: 4096
+            Higher bits in extended RCODE: 0x00
+            EDNS0 version: 0
+            Z: 0x0000
+                0... .... .... .... = DO bit: Cannot handle DNSSEC security RRs
+                .000 0000 0000 0000 = Reserved: 0x0000
+            Data length: 0
+
 */
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[allow(dead_code)]
+pub(crate) enum DnsRecord {
+  UNKNOWN {
+    domain: String,
+    qtype: u16,
+    data_len: u16,
+    ttl: u32,
+  }, // 0
+  A {
+    domain: String,
+    addr: Ipv4Addr,
+    ttl: u32,
+  }, // 1
+}
 
 #[derive(Debug, Default)]
 pub(crate) struct DnsMessage {
   pub(crate) tx_id: u16,
   pub(crate) raw_flags: u16,
   pub(crate) questions: u16,
+  pub(crate) answers: u16,
   pub(crate) answer_rrs: u16,
   pub(crate) authority_rrs: u16,
   pub(crate) additional_rrs: u16,
@@ -228,6 +291,7 @@ impl DnsMessage {
     // https://stackoverflow.com/questions/4082081/requesting-a-and-aaaa-records-in-single-dns-query/4083071#4083071
     // self.questions = 1;
     self.questions = u16::from_be_bytes(buf[4..6].try_into()?);
+    self.answers = self.questions; // TODO FIXME
     self.answer_rrs = u16::from_be_bytes(buf[6..8].try_into()?);
     self.authority_rrs = u16::from_be_bytes(buf[8..10].try_into()?);
     self.additional_rrs = u16::from_be_bytes(buf[10..12].try_into()?);
@@ -294,7 +358,7 @@ impl DnsMessage {
     // should be, all we have to do is set the flag as a response instead of request
     // then give back our object to be serialized and sent over the network back to client
     self.set_rq_type(DnsMessageType::Response);
-    eprintln!("{:?}", self);
+    //eprintln!("{:?}", self);
     Ok(self)
   }
 

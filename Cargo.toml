@@ -7,4 +7,4 @@ edition = "2021"
 
 [dependencies]
 socket2 = { version = "0.3", features = ["reuseport"] }
-bitlab = "1.1"
+# bitlab = "1.1"

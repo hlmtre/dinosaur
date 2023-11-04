@@ -13,9 +13,11 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
       Err(_) => todo!(),
     };
     let mut message: DnsMessage = DnsMessage::default();
+    /*
     for b in buf {
       print!("{:016b} ", b);
     }
+    */
     println!();
     match message.parse(&buf) {
       Ok(mut _m) => {
