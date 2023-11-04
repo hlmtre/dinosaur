@@ -2,6 +2,7 @@ mod config;
 mod dnserror;
 mod dnsmessage;
 mod server;
+use config::Config;
 use socket2::{Domain, Protocol, Socket, Type};
 use std::{
   env,
@@ -10,7 +11,6 @@ use std::{
 };
 
 fn main() {
-  let cr = config::Config::default();
   let args: Vec<String> = env::args().collect();
   // so we can get the next arg AFTER our flag
   /*
@@ -19,7 +19,13 @@ fn main() {
     std::process::exit(1);
   }
   */
-  for e in &args {}
+  for e in &args {
+    if e == "-h" || e == "--help" {
+      help();
+      std::process::exit(0);
+    }
+  }
+  let cr = config::Config::load("config".to_string());
   let socket = match Socket::new(Domain::ipv4(), Type::dgram(), Some(Protocol::udp())) {
     Ok(a) => a,
     _ => panic!("couldn't create socket :("),
@@ -40,7 +46,10 @@ fn main() {
         std::process::exit(1)
       };
     }
-    Err(_) => todo!(),
+    Err(e) => {
+      eprintln!("error! {:?}", e);
+      std::process::exit(1);
+    }
   }
 }
 
