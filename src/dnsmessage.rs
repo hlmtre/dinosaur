@@ -106,6 +106,47 @@ pub(crate) enum DnsRecord {
   }, // 1
 }
 
+impl DnsRecord {
+  pub fn read(buffer: &mut BytePacketBuffer) -> Result<DnsRecord> {
+    let mut domain = String::new();
+    buffer.read_qname(&mut domain)?;
+
+    let qtype_num = buffer.read_u16()?;
+    let qtype = QueryType::from_num(qtype_num);
+    let _ = buffer.read_u16()?;
+    let ttl = buffer.read_u32()?;
+    let data_len = buffer.read_u16()?;
+
+    match qtype {
+      QueryType::A => {
+        let raw_addr = buffer.read_u32()?;
+        let addr = Ipv4Addr::new(
+          ((raw_addr >> 24) & 0xFF) as u8,
+          ((raw_addr >> 16) & 0xFF) as u8,
+          ((raw_addr >> 8) & 0xFF) as u8,
+          ((raw_addr >> 0) & 0xFF) as u8,
+        );
+
+        Ok(DnsRecord::A {
+          domain: domain,
+          addr: addr,
+          ttl: ttl,
+        })
+      }
+      QueryType::UNKNOWN(_) => {
+        buffer.step(data_len as usize)?;
+
+        Ok(DnsRecord::UNKNOWN {
+          domain: domain,
+          qtype: qtype_num,
+          data_len: data_len,
+          ttl: ttl,
+        })
+      }
+    }
+  }
+}
+
 #[derive(Debug, Default)]
 pub(crate) struct DnsMessage {
   pub(crate) tx_id: u16,
@@ -206,6 +247,12 @@ impl Default for Flags {
       error: DnsResponseErrorType::NoError,
     }
   }
+}
+
+#[derive(Debug)]
+pub(crate) struct PacketBuf {
+  pub buf: [u8; 512],
+  pub pos: usize,
 }
 
 /*
@@ -352,6 +399,28 @@ impl DnsMessage {
       r.push(_b[0]);
     }
     return Ok(r);
+  }
+
+  pub(crate) fn read_qname(&mut self, buf: &[u8], outstr: &mut String) {
+    let mut index = usize::from(HEADER_LEN);
+    let mut host_chunk_len = buf[index];
+    // we have to step through one name chunk at a time
+    //   g o o g l e   c o m
+    // 6             3       0
+    // ^ here
+    //               ^ then here
+    //                       ^ then here, and discover we're done
+    let mut temp_host = String::new();
+    while host_chunk_len != 0 {
+      temp_host.push_str(
+        String::from_utf8(self.take_next(buf, &mut index, host_chunk_len.into())?)
+          .unwrap()
+          .as_str(),
+      );
+      host_chunk_len = buf[index];
+      temp_host.push('.');
+    }
+    outstr = temp_host;
   }
 
   pub(crate) fn generate_response(&mut self) -> Result<&DnsMessage, DnsError> {
