@@ -54,6 +54,9 @@ fn main() {
 }
 
 fn help() {
-  println!("dnsrs --upstream <upstream resolver> --interface <interface to bind to> --port <port>");
+  println!("dnsrs --upstream <upstream resolver> --interface <interface to bind to> --ip <ip address> --port <port> --config <config location>");
+  println!(
+    "any option can be given. options on cli will override options specified in the config."
+  );
   std::process::exit(0);
 }
