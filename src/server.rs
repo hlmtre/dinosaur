@@ -1,6 +1,6 @@
 use crate::{
   config::Config,
-  dnsmessage::{DnsMessage, PacketBuf},
+  dnsmessage::{DnsMessage, DnsRecord, PacketBuf},
 };
 use socket2::{Domain, Protocol, Socket, Type};
 
@@ -8,9 +8,7 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
   eprintln!("listening for dns requests...");
   eprintln!("{:?}", s);
   eprintln!("{:?}", c);
-  let mut buf = [0_u8; 512]; // maximum non-eDNS len
   let mut pktbuf = PacketBuf::new();
-  pktbuf.buf = buf;
   #[allow(unreachable_code)]
   loop {
     let a = match s.recv_from(&mut pktbuf.buf) {

@@ -114,6 +114,7 @@ impl DnsRecord {
     let mut domain = String::new();
     buffer.read_qname(&mut domain)?;
 
+    println!("{}", domain);
     let qtype_num = buffer.read_u16()?;
     let qtype = QueryType::from_num(qtype_num);
     let _ = buffer.read_u16()?;
@@ -567,26 +568,8 @@ impl DnsMessage {
        DEC    6                    3           0       1      1
        thanks https://github.com/EmilHernvall/dnsguide/blob/master/chapter1.md for the chart
     */
-    let mut index = usize::from(HEADER_LEN);
-    let mut host_chunk_len = buf[index];
-    // we have to step through one name chunk at a time
-    //   g o o g l e   c o m
-    // 6             3       0
-    // ^ here
-    //               ^ then here
-    //                       ^ then here, and discover we're done
-    let mut temp_host = String::new();
-    while host_chunk_len != 0 {
-      temp_host.push_str(
-        String::from_utf8(self.take_next(buf, &mut index, host_chunk_len.into())?)
-          .unwrap()
-          .as_str(),
-      );
-      host_chunk_len = buf[index];
-      temp_host.push('.');
-    }
     self.flags = Flags::new(self.raw_flags);
-    self.host = self.remove_dot(temp_host);
+    self.host = self.remove_dot(self.read_qname(buf));
     Ok(self)
   }
 
@@ -612,7 +595,13 @@ impl DnsMessage {
     Ok(r)
   }
 
-  pub(crate) fn read_qname(&mut self, buf: &[u8], outstr: &mut String) {
+  // we have to step through one name chunk at a time
+  //   g o o g l e   c o m
+  // 6             3       0
+  // ^ here
+  //               ^ then here
+  //                       ^ then here, and discover we're done
+  pub(crate) fn read_qname(&self, buf: &[u8]) -> String {
     let mut index = usize::from(HEADER_LEN);
     let mut host_chunk_len = buf[index];
     // we have to step through one name chunk at a time
@@ -635,7 +624,7 @@ impl DnsMessage {
       host_chunk_len = buf[index];
       temp_host.push('.');
     }
-    *outstr = temp_host;
+    temp_host
   }
 
   pub(crate) fn generate_response(&mut self) -> Result<&DnsMessage, DnsError> {
