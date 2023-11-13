@@ -1,2 +1,2 @@
-interface = "dummy1"
+interface = "du0"
 ip_address = "172.16.35.1:5354"

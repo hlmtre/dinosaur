@@ -110,7 +110,6 @@ pub(crate) enum DnsRecord {
 }
 
 impl DnsRecord {
-  /*
   pub fn read(buffer: &mut PacketBuf) -> Result<DnsRecord, DnsError> {
     let mut domain = String::new();
     buffer.read_qname(&mut domain)?;
@@ -134,7 +133,7 @@ impl DnsRecord {
         Ok(DnsRecord::A { domain, addr, ttl })
       }
       QueryType::UNKNOWN(_) => {
-        buffer.step(data_len as usize)?;
+        buffer.step(data_len as usize);
 
         Ok(DnsRecord::UNKNOWN {
           domain,
@@ -145,7 +144,6 @@ impl DnsRecord {
       }
     }
   }
-  */
 }
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -235,12 +233,12 @@ impl TryFrom<u16> for DnsMessageType {
 */
 
 #[derive(Debug)]
-pub(crate) enum QueryType {
+pub(crate) enum MessageType {
   Standard = 0,
   Inverse = 4, // in-addr.arpa
 }
 
-impl fmt::Display for QueryType {
+impl fmt::Display for MessageType {
   fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
     write!(f, "QueryType: {:?}", self)
   }
@@ -249,7 +247,7 @@ impl fmt::Display for QueryType {
 #[derive(Debug)]
 pub(crate) struct Flags {
   rq: DnsMessageType,
-  query_type: QueryType,
+  query_type: MessageType,
   authoritative: bool,
   truncated: bool,
   recursive: bool,
@@ -262,13 +260,35 @@ impl Default for Flags {
   fn default() -> Flags {
     Flags {
       rq: DnsMessageType::Query,
-      query_type: QueryType::Standard,
+      query_type: MessageType::Standard,
       authoritative: false,
       truncated: false,
       recursive: false,
       recursion_available: false,
       authenticated: false,
       error: DnsResponseErrorType::NoError,
+    }
+  }
+}
+
+#[derive(PartialEq, Eq, Debug, Clone, Hash, Copy)]
+pub enum QueryType {
+  UNKNOWN(u16),
+  A, // 1
+}
+
+impl QueryType {
+  pub fn to_num(&self) -> u16 {
+    match *self {
+      QueryType::UNKNOWN(x) => x,
+      QueryType::A => 1,
+    }
+  }
+
+  pub fn from_num(num: u16) -> QueryType {
+    match num {
+      1 => QueryType::A,
+      _ => QueryType::UNKNOWN(num),
     }
   }
 }
@@ -468,9 +488,9 @@ impl Flags {
         DnsMessageType::Response
       },
       query_type: if (raw_flags & 0b0100_0000_0000_0000) == 0 {
-        QueryType::Standard
+        MessageType::Standard
       } else {
-        QueryType::Inverse
+        MessageType::Inverse
       },
       authoritative: true,
       truncated: false,
