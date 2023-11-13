@@ -5,6 +5,9 @@ use std::net::Ipv4Addr;
 use std::convert::TryInto;
 use std::fmt;
 
+//type Error = Box<dyn std::error::Error>;
+//type Result<T> = std::result::Result<T, Error>;
+
 const HEADER_LEN: u8 = 12;
 
 /*
@@ -107,7 +110,8 @@ pub(crate) enum DnsRecord {
 }
 
 impl DnsRecord {
-  pub fn read(buffer: &mut BytePacketBuffer) -> Result<DnsRecord> {
+  /*
+  pub fn read(buffer: &mut PacketBuf) -> Result<DnsRecord, DnsError> {
     let mut domain = String::new();
     buffer.read_qname(&mut domain)?;
 
@@ -127,22 +131,42 @@ impl DnsRecord {
           ((raw_addr >> 0) & 0xFF) as u8,
         );
 
-        Ok(DnsRecord::A {
-          domain: domain,
-          addr: addr,
-          ttl: ttl,
-        })
+        Ok(DnsRecord::A { domain, addr, ttl })
       }
       QueryType::UNKNOWN(_) => {
         buffer.step(data_len as usize)?;
 
         Ok(DnsRecord::UNKNOWN {
-          domain: domain,
+          domain,
           qtype: qtype_num,
-          data_len: data_len,
-          ttl: ttl,
+          data_len,
+          ttl,
         })
       }
+    }
+  }
+  */
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum ResultCode {
+  NOERROR = 0,
+  FORMERR = 1,
+  SERVFAIL = 2,
+  NXDOMAIN = 3,
+  NOTIMP = 4,
+  REFUSED = 5,
+}
+
+impl ResultCode {
+  pub fn from_num(num: u8) -> ResultCode {
+    match num {
+      1 => ResultCode::FORMERR,
+      2 => ResultCode::SERVFAIL,
+      3 => ResultCode::NXDOMAIN,
+      4 => ResultCode::NOTIMP,
+      5 => ResultCode::REFUSED,
+      0 | _ => ResultCode::NOERROR,
     }
   }
 }
@@ -255,6 +279,173 @@ pub(crate) struct PacketBuf {
   pub pos: usize,
 }
 
+impl PacketBuf {
+  /// This gives us a fresh buffer for holding the packet contents, and a
+  /// field for keeping track of where we are.
+  pub fn new() -> PacketBuf {
+    PacketBuf {
+      buf: [0; 512],
+      pos: 0,
+    }
+  }
+
+  /// Current position within buffer
+  fn pos(&self) -> usize {
+    self.pos
+  }
+
+  /// Step the buffer position forward a specific number of steps
+  fn step(&mut self, steps: usize) {
+    self.pos += steps;
+  }
+
+  /// Change the buffer position
+  fn seek(&mut self, pos: usize) {
+    self.pos = pos;
+  }
+
+  /// Read a single byte and move the position one step forward
+  fn read(&mut self) -> Result<u8, DnsError> {
+    if self.pos >= 512 {
+      return Err("End of buffer".into());
+    }
+    let res = self.buf[self.pos];
+    self.pos += 1;
+
+    Ok(res)
+  }
+
+  /// Get a single byte, without changing the buffer position
+  fn get(&mut self, pos: usize) -> Result<u8, DnsError> {
+    if pos >= 512 {
+      return Err("End of buffer".into());
+    }
+    Ok(self.buf[pos])
+  }
+
+  /// Get a range of bytes
+  fn get_range(&mut self, start: usize, len: usize) -> Result<&[u8], DnsError> {
+    if start + len >= 512 {
+      return Err("End of buffer".into());
+    }
+    Ok(&self.buf[start..start + len])
+  }
+
+  /// Read two bytes, stepping two steps forward
+  fn read_u16(&mut self) -> Result<u16, DnsError> {
+    let res = ((self.read()? as u16) << 8) | (self.read()? as u16);
+
+    Ok(res)
+  }
+
+  /// Read four bytes, stepping four steps forward
+  fn read_u32(&mut self) -> Result<u32, DnsError> {
+    let res = ((self.read()? as u32) << 24)
+      | ((self.read()? as u32) << 16)
+      | ((self.read()? as u32) << 8)
+      | ((self.read()? as u32) << 0);
+
+    Ok(res)
+  }
+  /// Read a qname
+  ///
+  /// The tricky part: Reading domain names, taking labels into consideration.
+  /// Will take something like [3]www[6]google[3]com[0] and append
+  /// www.google.com to outstr.
+  fn read_qname(&mut self, outstr: &mut String) -> Result<(), DnsError> {
+    // Since we might encounter jumps, we'll keep track of our position
+    // locally as opposed to using the position within the struct. This
+    // allows us to move the shared position to a point past our current
+    // qname, while keeping track of our progress on the current qname
+    // using this variable.
+    let mut pos = self.pos();
+
+    // track whether or not we've jumped
+    let mut jumped = false;
+    let max_jumps = 512;
+    let mut jumps_performed = 0;
+
+    // Our delimiter which we append for each label. Since we don't want a
+    // dot at the beginning of the domain name we'll leave it empty for now
+    // and set it to "." at the end of the first iteration.
+    let mut delim = "";
+    loop {
+      // Dns Packets are untrusted data, so we need to be paranoid. Someone
+      // can craft a packet with a cycle in the jump instructions. This guards
+      // against such packets.
+      if jumps_performed > max_jumps {
+        return Err(
+          format!("Limit of {} jumps exceeded", max_jumps)
+            .as_str()
+            .into(),
+        );
+      }
+
+      // At this point, we're always at the beginning of a label. Recall
+      // that labels start with a length byte.
+      let len = self.get(pos)?;
+
+      // If len has the two most significant bit are set, it represents a
+      // jump to some other offset in the packet:
+      if (len & 0xC0) == 0xC0 {
+        // Update the buffer position to a point past the current
+        // label. We don't need to touch it any further.
+        if !jumped {
+          if self.pos > self.buf.len() {
+            return Err("too long!".into());
+          }
+          self.seek(pos + 2);
+        }
+
+        // Read another byte, calculate offset and perform the jump by
+        // updating our local position variable
+        let b2 = self.get(pos + 1)? as u16;
+        let offset = (((len as u16) ^ 0xC0) << 8) | b2;
+        pos = offset as usize;
+
+        // Indicate that a jump was performed.
+        jumped = true;
+        jumps_performed += 1;
+
+        continue;
+      }
+      // The base scenario, where we're reading a single label and
+      // appending it to the output:
+      else {
+        // Move a single byte forward to move past the length byte.
+        pos += 1;
+
+        // Domain names are terminated by an empty label of length 0,
+        // so if the length is zero we're done.
+        if len == 0 {
+          break;
+        }
+
+        // Append the delimiter to our output buffer first.
+        outstr.push_str(delim);
+
+        // Extract the actual ASCII bytes for this label and append them
+        // to the output buffer.
+        let str_buffer = self.get_range(pos, len as usize)?;
+        outstr.push_str(&String::from_utf8_lossy(str_buffer).to_lowercase());
+
+        delim = ".";
+
+        // Move forward the full length of the label.
+        pos += len as usize;
+      }
+    }
+
+    if !jumped {
+      if self.pos > self.buf.len() {
+        return Err("too long!".into());
+      }
+      self.seek(pos);
+    }
+
+    Ok(())
+  }
+}
 /*
     0... .... .... .... = Response: Message is a query
     .000 0... .... .... = Opcode: Standard query (0)
@@ -398,7 +589,7 @@ impl DnsMessage {
       c.encode_utf16(&mut _b);
       r.push(_b[0]);
     }
-    return Ok(r);
+    Ok(r)
   }
 
   pub(crate) fn read_qname(&mut self, buf: &[u8], outstr: &mut String) {
@@ -413,14 +604,18 @@ impl DnsMessage {
     let mut temp_host = String::new();
     while host_chunk_len != 0 {
       temp_host.push_str(
-        String::from_utf8(self.take_next(buf, &mut index, host_chunk_len.into())?)
-          .unwrap()
-          .as_str(),
+        String::from_utf8(
+          self
+            .take_next(buf, &mut index, host_chunk_len.into())
+            .unwrap(),
+        )
+        .unwrap()
+        .as_str(),
       );
       host_chunk_len = buf[index];
       temp_host.push('.');
     }
-    outstr = temp_host;
+    *outstr = temp_host;
   }
 
   pub(crate) fn generate_response(&mut self) -> Result<&DnsMessage, DnsError> {

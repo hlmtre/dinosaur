@@ -17,6 +17,12 @@ pub enum ErrorKind {
   Other,
 }
 
+impl From<&str> for DnsError {
+  fn from(incoming: &str) -> DnsError {
+    DnsError::Other(incoming.to_string())
+  }
+}
+
 impl From<io::Error> for DnsError {
   fn from(err: io::Error) -> DnsError {
     DnsError::Io(err)

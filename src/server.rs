@@ -1,4 +1,7 @@
-use crate::{config::Config, dnsmessage::DnsMessage};
+use crate::{
+  config::Config,
+  dnsmessage::{DnsMessage, PacketBuf},
+};
 use socket2::{Domain, Protocol, Socket, Type};
 
 pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
@@ -6,9 +9,11 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
   eprintln!("{:?}", s);
   eprintln!("{:?}", c);
   let mut buf = [0_u8; 512]; // maximum non-eDNS len
+  let mut pktbuf = PacketBuf::new();
+  pktbuf.buf = buf;
   #[allow(unreachable_code)]
   loop {
-    let a = match s.recv_from(&mut buf) {
+    let a = match s.recv_from(&mut pktbuf.buf) {
       Ok(b) => b,
       Err(_) => todo!(),
     };
@@ -19,7 +24,7 @@ pub(crate) fn service_loop(s: Socket, c: Config) -> std::io::Result<()> {
     }
     */
     println!();
-    match message.parse(&buf) {
+    match message.parse(&pktbuf.buf) {
       Ok(mut _m) => {
         eprintln!(
           "received {:#?} bytes from socket from client {:#?}",
